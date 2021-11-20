@@ -6,21 +6,10 @@
 #include <string.h> // CBC mode, for memset
 
 
-#define CBC 1
-#define AES256 1
-
 #define AES_BLOCKSIZE 16
+#define AES_KEYLEN 32
+#define AES_keyExpSize 240
 
-#if defined(AES256) && (AES256 == 1)
-    #define AES_KEYLEN 32
-    #define AES_keyExpSize 240
-#elif defined(AES192) && (AES192 == 1)
-    #define AES_KEYLEN 24
-    #define AES_keyExpSize 208
-#else
-    #define AES_KEYLEN 16   // Key length in bytes
-    #define AES_keyExpSize 176
-#endif
 
 struct AES_ctx
 {
@@ -41,13 +30,6 @@ void AES_CBC_decrypt_buffer(struct AES_ctx* ctx, uint8_t* buf, size_t length);
 #define Nb 4
 #define Nk 8// The number of 32 bit words in a key.
 #define Nr 14// The number of rounds in AES Cipher.
-
-// jcallan@github points out that declaring Multiply as a function 
-// reduces code size considerably with the Keil ARM compiler.
-// See this link for more information: https://github.com/kokke/tiny-AES-C/pull/3
-#ifndef MULTIPLY_AS_A_FUNCTION
-  #define MULTIPLY_AS_A_FUNCTION 0
-#endif
 
 /*****************************************************************************/
 /* Private variables:                                                        */
@@ -113,6 +95,7 @@ static const uint8_t Rcon[11] = {
 // #define Nr 14// The number of rounds in AES Cipher.
 
 #define getSBoxValue(num) (sbox[(num)])
+#define getSBoxInvert(num) (rsbox[(num)])
 
 // This function produces Nb(Nr+1) round keys. The round keys are used in each round to decrypt the states. 
 static void KeyExpansion(uint8_t* RoundKey, const uint8_t* Key)
@@ -267,11 +250,6 @@ static void MixColumns(state_t* state)
   }
 }
 
-// Multiply is used to multiply numbers in the field GF(2^8)
-// Note: The last call to xtime() is unneeded, but often ends up generating a smaller binary
-//       The compiler seems to be able to vectorize the operation better this way.
-//       See https://github.com/kokke/tiny-AES-c/pull/34
-#if MULTIPLY_AS_A_FUNCTION
 static uint8_t Multiply(uint8_t x, uint8_t y)
 {
   return (((y & 1) * x) ^
@@ -279,19 +257,7 @@ static uint8_t Multiply(uint8_t x, uint8_t y)
        ((y>>2 & 1) * xtime(xtime(x))) ^
        ((y>>3 & 1) * xtime(xtime(xtime(x)))) ^
        ((y>>4 & 1) * xtime(xtime(xtime(xtime(x)))))); /* this last call to xtime() can be omitted */
-  }
-#else
-#define Multiply(x, y)                                \
-      (  ((y & 1) * x) ^                              \
-      ((y>>1 & 1) * xtime(x)) ^                       \
-      ((y>>2 & 1) * xtime(xtime(x))) ^                \
-      ((y>>3 & 1) * xtime(xtime(xtime(x)))) ^         \
-      ((y>>4 & 1) * xtime(xtime(xtime(xtime(x))))))   \
-
-#endif
-
-
-#define getSBoxInvert(num) (rsbox[(num)])
+}
 
 
 static void InvMixColumns(state_t* state)
