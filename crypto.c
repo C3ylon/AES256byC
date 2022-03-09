@@ -112,7 +112,7 @@ int EncodeAndDecodeFile(const char* dirpath, const char* filename, int isfolder)
 					while (szRead = fread(buff, 1, READSIZE, fp))
 					{
 						chunks--;
-                        AES_CBC_decrypt_buffer(&aes, buff, szRead);
+						AES_CBC_decrypt_buffer(&aes, buff, szRead);
 						if(chunks)
 							fwrite(buff, 1, szRead, tmp);	
 						else
