@@ -111,16 +111,16 @@ void EncodeAndDecodeFile(const char* dirpath, const char* filename)
 						if(chunks) {
 							fwrite(buff, 1, szRead, tmp);
                         }
-						else {
-							if(align) {
-								fwrite(buff, 1, szRead - 16 + align, tmp);
-								break;
-							}
-							else {
-								fwrite(buff, 1, szRead, tmp);
-								break;
-							}
-						}
+                        else {
+                            if(align) {
+                                fwrite(buff, 1, szRead - 16 + align, tmp);
+                                break;
+                            }
+                            else {
+                                fwrite(buff, 1, szRead, tmp);
+                                break;
+                            }
+                        }
 					}
 					fclose(tmp);
 				}
