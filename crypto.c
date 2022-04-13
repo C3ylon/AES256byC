@@ -28,6 +28,7 @@ uint8 key[KEYSIZE] = { 0 };
 uint8 iv[IVSIZE] = { 0 };
 
 uint8 buff[READSIZE] = { 0 };
+uint8 alignbuff[16] = { 0 };
 
 int if_encode = 0;
 
@@ -43,10 +44,9 @@ void geniv(void)
 void EncodeAndDecodeFile(const char* dirpath, const char* filename)
 {
     char filepath[MAX_PATH];
-    char filepathback[MAX_PATH];
+    char filepathbackup[MAX_PATH];
     size_t chunks = 0, szRead = 0, szFile = 0;
     uint8 align = 0;
-    uint8 alignbuff[16] = { 0 };
     strcpy(filepath, dirpath);
     if (filename[0] != '\0') {
         strcat(filepath, "\\");
@@ -67,12 +67,12 @@ void EncodeAndDecodeFile(const char* dirpath, const char* filename)
                     filehead[7] ^= align;
                 }
                 _fseeki64(fp, 0, SEEK_SET);
-                strcpy(filepathback, filepath);
+                strcpy(filepathbackup, filepath);
                 strcat(filepath, ".tmp");
                 FILE* tmp = fopen(filepath, "wb");
                 if (tmp) {
                     fwrite(filehead, 1, 8, tmp);
-                    fwrite(iv, 1, 16, tmp);
+                    fwrite(iv, 1, IVSIZE, tmp);
                     struct AES_ctx aes;
                     AES_init_ctx(&aes, key, iv);
                     while ((szRead = fread(buff, 1, READSIZE, fp))) {
@@ -82,8 +82,8 @@ void EncodeAndDecodeFile(const char* dirpath, const char* filename)
                     fclose(tmp);
                 }
                 fclose(fp);
-                remove(filepathback);
-                rename(filepath, filepathback);
+                remove(filepathbackup);
+                rename(filepath, filepathbackup);
                 return;
             }
             fclose(fp);
@@ -97,25 +97,25 @@ void EncodeAndDecodeFile(const char* dirpath, const char* filename)
                     chunks++;
                 _fseeki64(fp, 8, SEEK_SET);
                 align = *(buff + 7) & 0xF;
-                strcpy(filepathback, filepath);
+                strcpy(filepathbackup, filepath);
                 strcat(filepath, ".tmp");
                 FILE* tmp = fopen(filepath, "wb");
                 if (tmp) {
                     struct AES_ctx aes;
-                    fread(buff, 1, 16, fp);
-                    memcpy(iv, buff, 16);
+                    fread(buff, 1, IVSIZE, fp);
+                    memcpy(iv, buff, IVSIZE);
                     AES_init_ctx(&aes, key, iv);
                     while ((szRead = fread(buff, 1, READSIZE, fp))) {
                         chunks--;
                         AES_CBC_decrypt_buffer(&aes, buff, szRead);
                         if(chunks) {
                             fwrite(buff, 1, szRead, tmp);
-                        }
+                        } 
                         else {
                             if(align) {
                                 fwrite(buff, 1, szRead - 16 + align, tmp);
                                 break;
-                            }
+                            } 
                             else {
                                 fwrite(buff, 1, szRead, tmp);
                                 break;
@@ -125,8 +125,8 @@ void EncodeAndDecodeFile(const char* dirpath, const char* filename)
                     fclose(tmp);
                 }
                 fclose(fp);
-                remove(filepathback);
-                rename(filepath, filepathback);
+                remove(filepathbackup);
+                rename(filepath, filepathbackup);
                 return;
             }
             fclose(fp);
