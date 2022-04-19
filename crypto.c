@@ -75,7 +75,7 @@ void EncodeAndDecodeFile(const char* dirpath, const char* filename)
                     fwrite(iv, 1, IVSIZE, tmp);
                     struct AES_ctx aes;
                     AES_init_ctx(&aes, key, iv);
-                    while ((szRead = fread(buff, 1, READSIZE, fp))) {
+                    while((szRead = fread(buff, 1, READSIZE, fp))) {
                         AES_CBC_encrypt_buffer(&aes, buff, szRead);
                         fwrite(buff, 1, szRead, tmp);
                     }
@@ -105,7 +105,7 @@ void EncodeAndDecodeFile(const char* dirpath, const char* filename)
                     fread(buff, 1, IVSIZE, fp);
                     memcpy(iv, buff, IVSIZE);
                     AES_init_ctx(&aes, key, iv);
-                    while ((szRead = fread(buff, 1, READSIZE, fp))) {
+                    while((szRead = fread(buff, 1, READSIZE, fp))) {
                         chunks--;
                         AES_CBC_decrypt_buffer(&aes, buff, szRead);
                         if(chunks) {
@@ -176,7 +176,7 @@ void TraversalFiles(const char* dir)
                 end = clock();
                 printf("time: %.2fs\n", (double)(end - start) / CLOCKS_PER_SEC);
             }
-        } while (_findnext64(handle, &findData) == 0);
+        } while(_findnext64(handle, &findData) == 0);
         _findclose(handle);
     }
 }
