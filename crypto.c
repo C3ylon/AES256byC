@@ -41,7 +41,7 @@ void geniv(void)
     GENIV(4); GENIV(5); GENIV(6); GENIV(7);
 }
 
-void EncodeAndDecodeFile(const char* dirpath, const char* filename)
+void EncodeAndDecodeFile(const char *dirpath, const char *filename)
 {
     char filepath[MAX_PATH];
     char filepathbackup[MAX_PATH];
@@ -135,7 +135,7 @@ void EncodeAndDecodeFile(const char* dirpath, const char* filename)
     return;
 }
 
-void TraversalFiles(const char* dir)
+void TraversalFiles(const char *dir)
 {
     struct _stat64 sbuff;
     if(_stat64(dir, &sbuff) == -1) {
