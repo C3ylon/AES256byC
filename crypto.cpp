@@ -9,6 +9,7 @@
 #include <iostream>
 #include <string>
 #include <iomanip>
+#include <vector>
 #include <time.h>
 #include <sys/stat.h>
 #include "myaes.h"
@@ -32,6 +33,8 @@ static bool if_encode = 0;
 
 uint8 filehead[] = { 0xE8, 0xE9, 0x90, 0x90, 0x90, 0x90, 0xC3, 0xC0 };
 
+std::vector<std::string> FileOpErr;
+
 static void geniv(void) {
     srand((unsigned int)time(nullptr));
     auto geniv = [](const int i) { ((short*)&iv)[i] = (short)rand(); };
@@ -39,96 +42,144 @@ static void geniv(void) {
     geniv(4); geniv(5); geniv(6); geniv(7);
 }
 
+static void EncodeFile(FILE *fp, const std::string &filepath) {
+    fread(buff, 1, 8, fp);
+    if ((*(size_t*)buff & 0xFFFFFFFFFFFFFF) == 0xC390909090E9E8) {
+        fclose(fp);
+        return;
+    }
+    
+    std::string filepathbackup = filepath;
+    size_t szRead = 0, szFile = 0;
+    uint8 align = 0;
+    geniv();
+    _fseeki64(fp, 0, SEEK_END);
+    szFile = _ftelli64(fp);
+    align = szFile % 16;
+    filehead[7] &= 0xF0;
+    if (align) {
+        fwrite(alignbuff, 1, 16 - align, fp);
+        filehead[7] ^= align;
+    }
+    _fseeki64(fp, 0, SEEK_SET);
+    filepathbackup += ".tmp";
+    FILE* tmp = fopen(filepathbackup.c_str(), "wb");
+    if(!tmp) {
+        FileOpErr.push_back(std::string("[!]open file : ") + filepathbackup + " fail");
+        fclose(fp);
+        return;
+    }
+    fwrite(filehead, 1, 8, tmp);
+    fwrite(iv, 1, IVSIZE, tmp);
+    struct AES_ctx aes;
+    AES_init_ctx(&aes, key, iv);
+    while((szRead = fread(buff, 1, READSIZE, fp))) {
+        AES_CBC_encrypt_buffer(&aes, buff, szRead);
+        fwrite(buff, 1, szRead, tmp);
+    }
+    fclose(tmp);
+    fclose(fp);
+    remove(filepath.c_str());
+    rename(filepathbackup.c_str(), filepath.c_str());
+    return;
+}
+
+static void DecodeFile(FILE *fp, const std::string &filepath) {
+    fread(buff, 1, 8, fp);
+    if ((*(size_t*)buff & 0xFFFFFFFFFFFFFF) != 0xC390909090E9E8) {
+        fclose(fp);
+        return;
+    }
+
+    std::string filepathbackup = filepath;
+    size_t chunks = 0, szRead = 0;
+    uint8 align = 0;
+    _fseeki64(fp, 0, SEEK_END);
+    chunks = (_ftelli64(fp) - 24) / READSIZE;
+    if((_ftelli64(fp) - 24) % READSIZE)
+        chunks++;
+    _fseeki64(fp, 8, SEEK_SET);
+    align = *(buff + 7) & 0xF;
+    filepathbackup += ".tmp";
+    FILE* tmp = fopen(filepathbackup.c_str(), "wb");
+    if(!tmp) {
+        FileOpErr.push_back(std::string("[!]open file : ") + filepathbackup + " fail");
+        fclose(fp);
+        return;
+    }
+
+    struct AES_ctx aes;
+    fread(buff, 1, IVSIZE, fp);
+    memcpy(iv, buff, IVSIZE);
+    AES_init_ctx(&aes, key, iv);
+    while((szRead = fread(buff, 1, READSIZE, fp))) {
+        chunks--;
+        AES_CBC_decrypt_buffer(&aes, buff, szRead);
+        if(chunks) {
+            fwrite(buff, 1, szRead, tmp);
+            continue;
+        }
+        if(align) {
+            fwrite(buff, 1, szRead - 16 + align, tmp);
+            break;
+        } else {
+            fwrite(buff, 1, szRead, tmp);
+            break;
+        }
+    }
+    fclose(tmp);
+    fclose(fp);
+    remove(filepath.c_str());
+    rename(filepathbackup.c_str(), filepath.c_str());
+}
+
 static void EncodeAndDecodeFile(const char *dirpath)
 {
     std::string filepath = dirpath;
-    std::string filepathbackup;
-    size_t chunks = 0, szRead = 0, szFile = 0;
-    uint8 align = 0;
-
     FILE* fp = fopen(filepath.c_str(), "rb+");
     if(!fp) {
-        throw std::string("\n[!]open file : ") + filepath + " fall";
+        FileOpErr.push_back(std::string("[!]open file : ") + filepath + " fall");
+        return;
     }
-
     if (if_encode) {
-        geniv();
-        fread(buff, 1, 8, fp);
-        if ((*(size_t*)buff & 0xFFFFFFFFFFFFFF) != 0xC390909090E9E8) {
-            _fseeki64(fp, 0, SEEK_END);
-            szFile = _ftelli64(fp);
-            align = szFile % 16;
-            filehead[7] &= 0xF0;
-            if (align) {
-                fwrite(alignbuff, 1, 16 - align, fp);
-                filehead[7] ^= align;
-            }
-            _fseeki64(fp, 0, SEEK_SET);
-            filepathbackup = filepath;
-            filepath += ".tmp";
-            FILE* tmp = fopen(filepath.c_str(), "wb");
-            if (tmp) {
-                fwrite(filehead, 1, 8, tmp);
-                fwrite(iv, 1, IVSIZE, tmp);
-                struct AES_ctx aes;
-                AES_init_ctx(&aes, key, iv);
-                while((szRead = fread(buff, 1, READSIZE, fp))) {
-                    AES_CBC_encrypt_buffer(&aes, buff, szRead);
-                    fwrite(buff, 1, szRead, tmp);
-                }
-                fclose(tmp);
-            }
-            fclose(fp);
-            remove(filepathbackup.c_str());
-            rename(filepath.c_str(), filepathbackup.c_str());
-            return;
-        }
-        fclose(fp);
+        EncodeFile(fp, filepath);
     } else {
-        fread(buff, 1, 8, fp);
-        if ((*(size_t*)buff & 0xFFFFFFFFFFFFFF) == 0xC390909090E9E8) {
-            _fseeki64(fp, 0, SEEK_END);
-            chunks = (_ftelli64(fp) - 24) / READSIZE;
-            if((_ftelli64(fp) - 24) % READSIZE)
-                chunks++;
-            _fseeki64(fp, 8, SEEK_SET);
-            align = *(buff + 7) & 0xF;
-            filepathbackup = filepath;
-            filepath += ".tmp";
-            FILE* tmp = fopen(filepath.c_str(), "wb");
-            if (tmp) {
-                struct AES_ctx aes;
-                fread(buff, 1, IVSIZE, fp);
-                memcpy(iv, buff, IVSIZE);
-                AES_init_ctx(&aes, key, iv);
-                while((szRead = fread(buff, 1, READSIZE, fp))) {
-                    chunks--;
-                    AES_CBC_decrypt_buffer(&aes, buff, szRead);
-                    if(chunks) {
-                        fwrite(buff, 1, szRead, tmp);
-                    } 
-                    else {
-                        if(align) {
-                            fwrite(buff, 1, szRead - 16 + align, tmp);
-                            break;
-                        } 
-                        else {
-                            fwrite(buff, 1, szRead, tmp);
-                            break;
-                        }
-                    }
-                }
-                fclose(tmp);
-            }
-            fclose(fp);
-            remove(filepathbackup.c_str());
-            rename(filepath.c_str(), filepathbackup.c_str());
-            return;
-        }
-        fclose(fp);
-    }// if(if_encode)
+        DecodeFile(fp, filepath);
+    }
+}
 
-    return;
+template <typename T>
+void TraversalFiles(const char *, T);
+
+template <typename T>
+void TraversalFolder(const char *dir, T FileOp) {
+    std::string dirNew = std::string(dir) + "\\*.*";
+    struct __finddata64_t findData;
+    intptr_t handle = _findfirst64(dirNew.c_str(), &findData);
+    if (handle == -1) {
+        throw "\n[!]find path fail";
+    }
+    do {
+        if(findData.attrib & _A_SUBDIR) {
+            auto foldername = [&](const char *s)
+                { return std::string(findData.name) == s; };
+            if (foldername(".") || foldername("..")) {
+                continue;
+            }
+            std::cout << "[FOLDER]" << findData.name << "\n";
+            dirNew = std::string(dir) + "\\" + findData.name;
+            TraversalFiles(dirNew.c_str(), FileOp);
+        } else {
+            std::cout << "[FILE]" << findData.name << "\t" << findData.size << " bytes\t";
+            clock_t start, end;
+            start = clock();
+            std::string fullpath = std::string(dir) + "\\" + findData.name;
+            FileOp(fullpath.c_str());
+            end = clock();
+            std::cout << "time: " << (double)(end - start) / CLOCKS_PER_SEC << "s\n";
+        }
+    } while(_findnext64(handle, &findData) == 0);
+    _findclose(handle);
 }
 
 template <typename T>
@@ -144,33 +195,7 @@ void TraversalFiles(const char *dir, T FileOp) {
     }
     // input path is a folder
     else if(sbuff.st_mode & S_IFDIR) {
-        std::string dirNew = std::string(dir) + "\\*.*";
-        struct __finddata64_t findData;
-        intptr_t handle = _findfirst64(dirNew.c_str(), &findData);
-        if (handle == -1) {
-            throw "\n[!]find path fail";
-        }
-        do {
-            if(findData.attrib & _A_SUBDIR) {
-                auto foldername = [&](const char *s)
-                    { return std::string(findData.name) == s; };
-                if (foldername(".") || foldername("..")) {
-                    continue;
-                }
-                std::cout << "[FOLDER]" << findData.name << "\n";
-                dirNew = std::string(dir) + "\\" + findData.name;
-                TraversalFiles(dirNew.c_str(), FileOp);
-            } else {
-                std::cout << "[FILE]" << findData.name << "\t" << findData.size << " bytes\t";
-                clock_t start, end;
-                start = clock();
-                std::string fullpath = std::string(dir) + "\\" + findData.name;
-                FileOp(fullpath.c_str());
-                end = clock();
-                std::cout << "time: " << (double)(end - start) / CLOCKS_PER_SEC << "s\n";
-            }
-        } while(_findnext64(handle, &findData) == 0);
-        _findclose(handle);
+        TraversalFolder(dir, FileOp);
     }
 }
 
@@ -185,7 +210,7 @@ static void genkey() {
 
 static void cmdfunc(int argc, char *argv[], clock_t &start) {
     if(argc < 2) {
-        throw "\n[!]Missing parameter: file_path";
+        throw "[!]Missing parameter: file_path";
     }
     std::cout << "[FILE_PATH]" << argv[1] << "\n";
     std::cout << std::flush;
@@ -202,20 +227,22 @@ int main(int argc, char *argv[]) {
 
     clock_t start, end;
 
-    auto endfn = [&](const char *s) {
-        end = clock();
-        std::cout << s << "\n";
-        std::cout << "[+]total time is " << (double)(end - start) / CLOCKS_PER_SEC << "s\n";
-    };
-
     std::cout << "[*]BEGIN\n";
     try {
         cmdfunc(argc, argv, start);
+        if(!FileOpErr.empty()) {
+            for(const auto &i : FileOpErr) {
+                std::cout << i << "\n";
+            }
+        }
+        end = clock();
+        std::cout << "[+]total time is " << (double)(end - start) / CLOCKS_PER_SEC << "s\n";
     } catch(const char *e) {
-        endfn(e);
+        std::cout << e << "\n";
     } catch(const std::string &e) {
-        endfn(e.c_str());
+        std::cout << e << "\n";
     }
+
     std::cout << std::flush;
     system("pause");
     return 0;
