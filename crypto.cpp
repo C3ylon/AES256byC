@@ -1,10 +1,5 @@
 //#define _CRT_SECURE_NO_WARNINGS
-//gcc .\filecrypto.c -o filecrypto -O3 -lshlwapi
-
-//PathIsDirectory
-//#include<Shlwapi.h>
-//if compile in vs2019, add next line:
-//#pragma comment(lib, "shlwapi.lib")
+//g++ .\crypto.cpp -o crypto -Wall -Wextra -lshlwapi -O3
 
 #include <iostream>
 #include <string>
