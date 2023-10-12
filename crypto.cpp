@@ -24,17 +24,18 @@ constexpr auto IVSIZE = 16;
 #endif
 
 
-uint8 key[KEYSIZE];
-uint8 iv[IVSIZE];
+static uint8 key[KEYSIZE];
+static uint8 iv[IVSIZE];
 
-uint8 buff[READSIZE];
-uint8 alignbuff[IVSIZE];
+static uint8 buff[READSIZE];
+static uint8 alignbuff[IVSIZE];
 
 static bool if_encode = 0;
 
-uint8 filehead[] = { 0xE8, 0xE9, 0x90, 0x90, 0x90, 0x90, 0xC3, 0xC0 };
+static uint8 filehead[] = { 0xE8, 0xE9, 0x90, 0x90, 0x90, 0x90, 0xC3, 0xC0 };
 
-std::vector<std::string> FileOpErr;
+static std::vector<std::string> FileOpErr;
+static clock_t start, end;
 
 static void geniv(void) {
     srand((unsigned int)time(nullptr));
@@ -153,35 +154,44 @@ template <typename T>
 void TraversalFiles(const char *, T);
 
 template <typename T>
+void TraversalSubdir(const __finddata64_t &FindData, const char *dir, T FileOp) {
+    bool is_sub_dir = FindData.attrib & _A_SUBDIR;
+    if(is_sub_dir == true) {
+        auto foldername = [&](const char *s) {
+            return std::string(FindData.name) == s;
+        };
+        if (foldername(".") || foldername("..")) {
+            return;
+        }
+        std::cout << "[FOLDER]" << FindData.name << "\n";
+        std::string dirNew = std::string(dir) + "\\" + FindData.name;
+        TraversalFiles(dirNew.c_str(), FileOp);
+        return;
+    }
+    std::cout << "[FILE]" << FindData.name << "\t" << FindData.size << " bytes";
+    try {
+        clock_t start, end;
+        start = clock();
+        std::string fullpath = std::string(dir) + "\\" + FindData.name;
+        FileOp(fullpath.c_str());
+        end = clock();
+        std::cout << "\t" "time: " << (double)(end - start) / CLOCKS_PER_SEC << "s\n";
+    } catch (...) {
+        std::cout << "\n";
+    }
+}
+
+template <typename T>
 void TraversalFolder(const char *dir, T FileOp) {
     std::string dirNew = std::string(dir) + "\\*.*";
-    struct __finddata64_t findData;
-    intptr_t handle = _findfirst64(dirNew.c_str(), &findData);
+    struct __finddata64_t FindData;
+    intptr_t handle = _findfirst64(dirNew.c_str(), &FindData);
     if (handle == -1) {
         throw "[!]find path fail";
     }
     do {
-        if(findData.attrib & _A_SUBDIR) {
-            auto foldername = [&](const char *s)
-                { return std::string(findData.name) == s; };
-            if (foldername(".") || foldername("..")) {
-                continue;
-            }
-            std::cout << "[FOLDER]" << findData.name << "\n";
-            dirNew = std::string(dir) + "\\" + findData.name;
-            TraversalFiles(dirNew.c_str(), FileOp);
-        } else {
-            std::cout << "[FILE]" << findData.name << "\t" << findData.size << " bytes";
-            try {
-                clock_t start, end;
-                start = clock();
-                std::string fullpath = std::string(dir) + "\\" + findData.name;
-                FileOp(fullpath.c_str());
-                end = clock();
-                std::cout << "\t" "time: " << (double)(end - start) / CLOCKS_PER_SEC << "s\n";
-            } catch (...) { std::cout << "\n"; }
-        }
-    } while(_findnext64(handle, &findData) == 0);
+        TraversalSubdir(FindData, dir, FileOp);
+    } while(_findnext64(handle, &FindData) == 0);
     _findclose(handle);
 }
 
@@ -191,18 +201,20 @@ void TraversalFiles(const char *dir, T FileOp) {
     if(_stat64(dir, &sbuff) == -1) {
         throw "[!]find file or folder path fail";
     }
+    bool is_reg = sbuff.st_mode & _S_IFREG;
+    bool is_dir = sbuff.st_mode & S_IFDIR;
     // input path is a sigle file
-    if(sbuff.st_mode & _S_IFREG) {
+    if(is_reg == true) {
         std::cout << "[*]file size: " << sbuff.st_size << "bytes\n";
         FileOp(dir);
     }
     // input path is a folder
-    else if(sbuff.st_mode & S_IFDIR) {
+    else if(is_dir == true) {
         TraversalFolder(dir, FileOp);
     }
 }
 
-static void genkey() {
+static void GenKey() {
     std::string s;
     std::cin >> s;
     auto len = s.size();
@@ -211,16 +223,24 @@ static void genkey() {
     }
 }
 
-static void cmdfunc(int argc, char *argv[], clock_t &start) {
+static void CmdUI(int argc, char *argv[]) {
     if(argc < 2) {
         throw "[!]Missing parameter: file_path";
     }
     std::cout << "[*]BEGIN\n" "[FILE_PATH]" << argv[1] << "\n";
     std::cout << std::flush;
     std::cin >> if_encode;
-    genkey();
+    GenKey();
     start = clock();
     TraversalFiles(argv[1], EncodeAndDecodeFile);
+}
+
+static void PrintFinalInfo() {
+    if(!FileOpErr.empty())
+        for(const auto &i : FileOpErr)
+            std::cout << i << "\n";
+    end = clock();
+    std::cout << "[+]total time is " << (double)(end - start) / CLOCKS_PER_SEC << "s\n";
 }
 
 int main(int argc, char *argv[]) {
@@ -228,15 +248,9 @@ int main(int argc, char *argv[]) {
     std::cin.tie(nullptr);
     std::cout << std::fixed << std::setprecision(3);
 
-    clock_t start, end;
-
     try {
-        cmdfunc(argc, argv, start);
-        if(!FileOpErr.empty())
-            for(const auto &i : FileOpErr)
-                std::cout << i << "\n";
-        end = clock();
-        std::cout << "[+]total time is " << (double)(end - start) / CLOCKS_PER_SEC << "s\n";
+        CmdUI(argc, argv);
+        PrintFinalInfo();
     } catch(const char *e) {
         std::cout << e << "\n";
     } catch(const std::string &e) {
