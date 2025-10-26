@@ -10,7 +10,7 @@
 #include <io.h>
 #include "myaes.h"
 
-constexpr auto READSIZE = 1021 * 1024 * 1024;
+constexpr auto READSIZE = 1024 * 1024 * 1024;
 constexpr auto KEYSIZE = 32;
 constexpr auto IVSIZE = 16;
 
@@ -41,7 +41,7 @@ static void EncodeFile(FILE *fp, const std::string &filepath) {
         FileOpErr.push_back(std::string("[!]file has been encode : ") + filepath);
         throw FileOpErr.back();
     }
-    
+
     std::string filepathbackup = filepath + ".tmp";
     FILE* tmp = fopen(filepathbackup.c_str(), "wb");
     if(!tmp) {
